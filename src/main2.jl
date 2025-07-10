@@ -77,7 +77,7 @@ logfreqWeights= vcat(logfreqWeights2, logfreqWeights1) .* abs.(w_grid)      #wei
 ### 2. If N is too large, then save only chunks of them
 
 #For both cases: load them in the SSD first
-c1_file = open("tmp/C1_128.bin")
+c1_file = open("data/C1_128.bin")
 m = read(c1_file, Int)
 n = read(c1_file, Int)
 o = read(c1_file, Int)
@@ -87,7 +87,7 @@ length=  m*n*o*p
 c1_sol_flat = mmap(c1_file, Vector{Float64}, length)
 
 #Define angular solution
-c2_file = open("tmp/C2_128.bin")
+c2_file = open("data/C2_128.bin")
 m = read(c2_file, Int)
 n = read(c2_file, Int)
 o = read(c2_file, Int)

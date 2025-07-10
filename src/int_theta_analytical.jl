@@ -47,7 +47,7 @@ C2_fct(w, w1, p, k) = (k^2-p^2)/(2 * γ_χ * p * k) * (log(z_plus(w, w1, p, k) /
 
 #compute solutions on the grid
 
-c1_file= open("tmp/C1_128.bin", "w") 
+c1_file= open("data/C1_128.bin", "w") 
 
 write(c1_file, NUM_NODES_FREQ_doubled)
 write(c1_file, NUM_NODES_MOM)
@@ -76,7 +76,7 @@ end
 
 close(c1_file)
 
-c2_file= open("tmp/C2_128.bin", "w") 
+c2_file= open("data/C2_128.bin", "w") 
 
 write(c2_file, NUM_NODES_FREQ_doubled)
 write(c2_file, NUM_NODES_MOM)
