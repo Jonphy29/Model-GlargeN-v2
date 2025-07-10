@@ -32,7 +32,7 @@ function Int3(Σ, Γ, T, m2, p_grid, term3_constant, logmomWeights, w_grid, logf
 
             # angular independent parts of the integral
                 
-            term= im * (w1 + imag(Σ[f, r])) + (real(Σ[f, r]) - m2k2)
+            term= im * (w1 + imag(Σ[f, r])) + Γ0* (-real(Σ[f, r]) + m2k2)
     
             #term1_ang_indep= 1#/term_ang_indep
             term3_ang_indep= Γ[f,r]/abs2(term)
