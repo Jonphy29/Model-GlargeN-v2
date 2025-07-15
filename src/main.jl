@@ -19,8 +19,6 @@ using .integrate2D
 #test how many threads are available
 Threads.nthreads()
 
-
-
 #Integration cutoffs
 IR_CUTOFF = 0.0001      #IR cutoff for momentum and frequency
 UV_CUTOFF = 10;        #UV cutoff for momentum
@@ -50,7 +48,7 @@ term3_constant =   +(im/2)* λ/3  * 1/(2*pi)^3 #* (N+2)/N
 #Grid
 
 ##dimensions(this needs to match the .bin files)
-NUM_NODES_FREQ = 2^8;               #Number of nodes for the frequency integration
+NUM_NODES_FREQ = 2^10;              #Number of nodes for the frequency integration
 NUM_NODES_MOM= 2^5;                 #Number of nodes for the momentum integration   
 
 ## Momentum grid
@@ -76,15 +74,16 @@ logfreqWeights= vcat(logfreqWeights2, logfreqWeights1) .* abs.(w_grid)      #wei
 ### 1. If N is small enough: save complete matrices on RAM
 ### 2. If N is too large, then save only chunks of them
 
+#=
 #For both cases: load them in the SSD first
-c1_file = open("data/C1_w256p32.bin")
+c1_file = open("data/C1_w1024p32.bin")
 num_nodes_pin = read(c1_file, Int)
 num_nodes_win = read(c1_file, Int)
 num_nodes_pout = read(c1_file, Int)
 num_nodes_wout = read(c1_file, Int)
 #length= num_nodes_pin * num_nodes_win * num_nodes_pout * num_nodes_wout
 
-C1_chunk=Array{Float64}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, num_nodes_wout)
+C1_chunk=Array{Float32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, num_nodes_wout);
 @time read!(c1_file, C1_chunk)
 
 close(c1_file)
@@ -92,7 +91,7 @@ close(c1_file)
 C1_chunk[12,1,4,1]
 
 #Define angular solution
-c2_file = open("data/C2_w256p32.bin")
+c2_file = open("data/C2_w1024p32.bin")
 num_nodes_pin = read(c2_file, Int)
 num_nodes_win = read(c2_file, Int)
 num_nodes_pout = read(c2_file, Int)
@@ -100,12 +99,102 @@ num_nodes_wout = read(c2_file, Int)
 #length= num_nodes_pin * num_nodes_win * num_nodes_pout * num_nodes_wout
 #idx = p_in + (w_in-1)*p + (p_out-1)*p*o + (w_out-1)*p*o*n 
 
-C2_chunk=Array{ComplexF64}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, num_nodes_wout)
+C2_chunk=Array{ComplexF32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, num_nodes_wout)
 @time read!(c2_file, C2_chunk)
 
+delete!(C2_chunk)
 close(c2_file)
-
+=#
 #Integration function
+
+
+
+function Integrate_chunked(Σ, Γ, T, m2, Number_of_chunks)
+
+    I3= Int3(Σ, Γ, T, m2, p_grid, term3_constant, logmomWeights, w_grid, logfreqWeights, NUM_NODES_MOM, NUM_NODES_FREQ, Γ0, Γ02)
+    #Initialize output Arrays
+    Σ_new1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
+    Γ_new1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
+
+
+    c1_file = open("data/C1_w1024p32.bin")
+    num_nodes_pin = read(c1_file, Int)
+    num_nodes_win = read(c1_file, Int)
+    num_nodes_pout = read(c1_file, Int)
+    num_nodes_wout = read(c1_file, Int)
+
+    c2_file = open("data/C2_w1024p32.bin")
+    num_nodes_pin = read(c2_file, Int)
+    num_nodes_win = read(c2_file, Int)
+    num_nodes_pout = read(c2_file, Int)
+    num_nodes_wout = read(c2_file, Int)
+
+    
+    C1_chunk=Array{Float32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, Int(num_nodes_wout/Number_of_chunks))
+    C2_chunk=Array{ComplexF32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, Int(num_nodes_wout/Number_of_chunks))
+
+    for k = 1:Number_of_chunks
+
+        read!(c1_file, C1_chunk)
+        read!(c2_file, C2_chunk)
+
+        Threads.@threads for j = 1:(Int(num_nodes_wout/Number_of_chunks))
+            for i = 1:NUM_NODES_MOM 
+            I1, I2, Γ_new1[Int(j +  (k-1) * num_nodes_wout/Number_of_chunks),i] = integrate2D.int_freq_mom(Σ, Γ, C1_chunk[:,:,i,j], C2_chunk[:,:,i,j], T, m2, p_grid, logmomWeights, w_grid, logfreqWeights, NUM_NODES_MOM, NUM_NODES_FREQ, term1_constants, term2_constants, Γ_constant, Γ0)
+            Σ_new1[Int(j+ (k-1) * num_nodes_wout/Number_of_chunks),i] = I1 + I2+ I3
+            end
+        end
+    end
+
+    close(c1_file)
+    close(c2_file)
+
+    return Σ_new1, Γ_new1
+
+end 
+
+function Integrate_each_term_chunked(Σ, Γ, T, m2, Number_of_chunks)
+
+    #Initialize output Arrays
+    I1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
+    I2 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
+    Γ_new1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
+
+    c1_file = open("data/C1_w1024p32.bin")
+    num_nodes_pin = read(c1_file, Int)
+    num_nodes_win = read(c1_file, Int)
+    num_nodes_pout = read(c1_file, Int)
+    num_nodes_wout = read(c1_file, Int)
+
+    c2_file = open("data/C2_w1024p32.bin")
+    num_nodes_pin = read(c2_file, Int)
+    num_nodes_win = read(c2_file, Int)
+    num_nodes_pout = read(c2_file, Int)
+    num_nodes_wout = read(c2_file, Int)
+
+    
+    C1_chunk=Array{Float32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, Int(num_nodes_wout/Number_of_chunks))
+    C2_chunk=Array{ComplexF32}(undef, num_nodes_pin, num_nodes_win, num_nodes_pout, Int(num_nodes_wout/Number_of_chunks))
+
+    for k = 1:Number_of_chunks
+
+        read!(c1_file, C1_chunk)
+        read!(c2_file, C2_chunk)
+
+        Threads.@threads for j = 1:(Int(num_nodes_wout/Number_of_chunks))
+            for i = 1:NUM_NODES_MOM   
+                I1[Int(j+ (k-1) * num_nodes_wout/Number_of_chunks),i], I2[Int(j+ (k-1) * num_nodes_wout/Number_of_chunks),i], Γ_new1[Int(j+ (k-1) * num_nodes_wout/Number_of_chunks),i] = integrate2D.int_freq_mom(Σ, Γ, C1_chunk[:,:,i,j], C2_chunk[:,:,i,j], T, m2, p_grid, logmomWeights, w_grid, logfreqWeights, NUM_NODES_MOM, NUM_NODES_FREQ, term1_constants, term2_constants, Γ_constant, Γ0)
+            end
+        end
+    end
+
+    close(c1_file)
+    close(c2_file)
+
+    return I1, I2, Γ_new1
+
+end 
+
 
 function Integrate(Σ, Γ, T, m2)
     
@@ -114,12 +203,12 @@ function Integrate(Σ, Γ, T, m2)
     Σ_new1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
     Γ_new1 = Array{ComplexF64}(undef, 2* NUM_NODES_FREQ, NUM_NODES_MOM)
 
+
     Threads.@threads for i = 1:NUM_NODES_MOM 
         for j = 1:(2* NUM_NODES_FREQ)
             
             I1, I2, Γ_new1[j,i] = integrate2D.int_freq_mom(Σ, Γ, C1_chunk[:,:,i,j], C2_chunk[:,:,i,j], T, m2, p_grid, logmomWeights, w_grid, logfreqWeights, NUM_NODES_MOM, NUM_NODES_FREQ, term1_constants, term2_constants, Γ_constant, Γ0)
-            Σ_new1[j,i] = I1 +I2+ I3
-
+            Σ_new1[j,i] = I1 + I2+ I3
         end
     end
 
@@ -201,6 +290,11 @@ B=[]
 append!(A, [fill(0.0+0.0*im, 2 * NUM_NODES_FREQ, NUM_NODES_MOM)])
 append!(B, [fill(0.0+2*Γ0*T*im, 2 * NUM_NODES_FREQ, NUM_NODES_MOM)])
 
+#@time a1,b1 = Integrate_chunked(A[1], B[1], T, m2, 8)
+
+scatter(w_grid1, real(a1[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Re(I1)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))
+
+
 #test term 3: Compare:
 
 -λ * T/(12* pi^2)* (UV_CUTOFF - atan(UV_CUTOFF/sqrt(m2))) 
@@ -211,7 +305,9 @@ Int3(A[1], B[1], T, m2, p_grid, term3_constant, logmomWeights, w_grid, logfreqWe
 
 for i in 1:10
 
-    a, b = Integrate(A[i], B[i], T, m2)
+    a, b = Integrate_chunked(A[i], B[i], T, m2, 8)
+
+    println(mass_eff(a , b , T, m2))
 
     append!(A, [a])
     append!(B, [b])
@@ -219,18 +315,24 @@ for i in 1:10
 end
 
 i=11
-I1, I2, Γ_new = Integrate_each_term(A[i], B[i], T, m2)
+I1, I2, Γ_new =Integrate_each_term_chunked(A[i], B[i], T, m2, 8)
 
-scatter(w_grid1, real(I1[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Re(I1)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))#works i.g
+scatter(w_grid1, real(I1[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Re(I1)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))
+#savefig("images/w1024p32/Re_I1.pdf")
 scatter(w_grid1, real(I2[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Re(I2)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))#works i.g.
-
+#savefig("images/w1024p32/Re_I2.pdf")
 scatter(w_grid1, imag(I1[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Im(I1)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))#not antisymmetric
+#savefig("images/w1024p32/Im_I1.pdf")
 scatter(w_grid1, imag(I2[(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Im(I2)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))#works
+#savefig("images/w1024p32/Im_I2.pdf")
 
+256*2
 i=11
 
-scatter!(w_grid1, spectral(A[i] , B[i], T, m2)[:,1], label="ρ", xlabel="ω", ylabel="ρ", xscale = :log10, xticks=(10.0 .^ (-4:6)))
+scatter(w_grid1, spectral(A[i] , B[i], T, m2)[:,1], label="ρ", xlabel="ω", ylabel="ρ", xscale = :log10, xticks=(10.0 .^ (-4:6)))
+scatter(w_grid1, imag(A[i][1:NUM_NODES_FREQ,1]), xlabel="ω", ylabel="Im(Σ)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))
 scatter(w_grid1, imag(A[i][(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Im(Σ)", xscale = :log10,  xticks=(10.0 .^ (-4:6)))
+
 scatter(w_grid1, real(A[i][(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Re(Σ)", xscale = :log10, xticks=(10.0 .^ (-4:6)))
 scatter(w_grid1, imag(B[i][(NUM_NODES_FREQ+1):end,1]), xlabel="ω", ylabel="Γ", xscale = :log10, xticks=(10.0 .^ (-4:6)))
 

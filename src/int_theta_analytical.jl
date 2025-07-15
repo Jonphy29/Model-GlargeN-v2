@@ -12,7 +12,7 @@ const γ_χ= γ/χ;
 
 #define grid(as in main.jl)
 
-NUM_NODES_FREQ = 2^9;  
+NUM_NODES_FREQ = 2^10;
 NUM_NODES_MOM= 2^5;            
 
 IR_CUTOFF = 0.0001;       
@@ -27,27 +27,28 @@ logfreqNodes, logfreqWeights1 = gausslegendre(NUM_NODES_FREQ)
 logfreqNodes = 0.5 * (logfreqNodes .+ 1) * (log(ω_max) - log(IR_CUTOFF)) .+ log(IR_CUTOFF)
 w_grid1 = exp.(logfreqNodes)
 w_grid2= -reverse(w_grid1);
-w_grid= vcat(w_grid2, w_grid1); 
+w_grid= vcat(w_grid2, w_grid1);
 
 NUM_NODES_FREQ_doubled= 2 * NUM_NODES_FREQ; 
 #define complex 0
-zeroC = complex(0.0, 0.0)
+zeroC =complex(0.0, 0.0)
 
 #define analytic solution
 
 z_plus(w, w1, p, k) = abs(im*(w-w1) + (γ_χ*(p+k)))
-z_minus(w, w1, p, k) = abs(im*(w-w1) + (γ_χ*(p-k)))
-phi_plus(w, w1, p, k) = (w-w1)/(γ_χ*(p+k)^2)
+z_minus(w, w1, p, k) =  abs(im*(w-w1) + (γ_χ*(p-k)))
+phi_plus(w, w1, p, k) =  (w-w1)/(γ_χ*(p+k)^2)
 phi_minus(w, w1, p, k) = (w-w1)/(γ_χ*(p-k)^2)
 
 
 C1_fct(w, w1, p, k) = 1/(4* γ_χ * p * k) * log(z_minus(w, w1, p, k)^2 / z_plus(w, w1, p, k)^2)
 C2_fct(w, w1, p, k) = (k^2-p^2)/(2 * γ_χ * p * k) * (log(z_plus(w, w1, p, k) / z_minus(w, w1, p, k)) - im*atan(phi_plus(w, w1, p, k)) + im* atan(phi_minus(w, w1, p, k)))
 
+typeof( C1_fct(w_grid[1], w_grid[1], p_grid[1], p_grid[1]))
 #compute solutions on the grid: Note, the grid is (p_in, w_in, p_out, w_out
 
 ##check if the file already exists(to prevent overwriting)
-filename = "data/C1_w512p32.bin"
+filename = "data/C1_w1024p32.bin"
 if isfile(filename)
     error("File '$filename' already exists. Aborting to prevent overwrite.")
 else
@@ -79,7 +80,7 @@ end
 
 close(c1_file)
 
-filename2 = "data/C2_w512p32.bin"
+filename2 = "data/C2_w1024p32.bin"
 if isfile(filename2)
     error("File '$filename2' already exists. Aborting to prevent overwrite.")
 else
